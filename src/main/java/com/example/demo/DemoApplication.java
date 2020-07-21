@@ -51,15 +51,14 @@ public class DemoApplication {
          * as you can see here, using functional MVC, one must provide a {@link org.springframework.web.servlet.function.HandlerFunction}
          * and a HandlerFunction, only allows to return {@link ServerResponse}. and all packaged implementations of ServerResponse
          * come with a final StatusCode.
-         *
+         * <p>
          * we have {@link org.springframework.web.servlet.function.EntityResponse} that allows for {@link java.util.concurrent.CompletionStage}
          * as its entity.. but the CompletionStage has no ability to affect the wrapping EntityResponse's StatusCode, or for that matter,
          * no ability to create a "Location" header as well.
-         *
+         * <p>
          * {@link FutureServerResponse} is a bad way of forcing functional MVC to deal with future dynamic responses.
-         *
+         * <p>
          * is there a real way?
-         *
          */
         @Bean
         RouterFunction<ServerResponse> helloWorldRouterFunction(OldHelloWorldService oldHelloWorldService) {
@@ -93,11 +92,10 @@ public class DemoApplication {
          * <p>
          * as you can see, before the change, this function was a {@link RequestMapping} and it handled the
          * completable future, we could return both concrete OK responses with a body, and FOUND responses with a location.
-         *
          */
-        //        @RequestMapping("/helloWorld/{option}")
+        // @RequestMapping("/helloWorld/{option}")
         CompletableFuture<ResponseEntity<String>> futureFoo(
-//                @PathVariable
+                // @PathVariable
                 int option) {
             return CompletableFuture.supplyAsync(() -> {
                 if (option == 2) {
@@ -114,7 +112,6 @@ public class DemoApplication {
     /**
      * this solution works, but is not very optimal.. for instance it ignores the reasoning for making all the fields of
      * {@link org.springframework.web.servlet.function.EntityResponse} implementation final! it also handles errors in a ... less than optimal ... way.
-     *
      */
     @RequiredArgsConstructor
     static class FutureServerResponse<T> implements ServerResponse {

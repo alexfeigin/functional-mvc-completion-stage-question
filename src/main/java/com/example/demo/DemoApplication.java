@@ -1,33 +1,16 @@
 package com.example.demo;
 
-import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.NonNull;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.ModelAndView;
-import org.springframework.web.servlet.function.RequestPredicates;
-import org.springframework.web.servlet.function.RouterFunction;
-import org.springframework.web.servlet.function.RouterFunctions;
-import org.springframework.web.servlet.function.ServerResponse;
+import org.springframework.web.servlet.function.*;
 
-import javax.servlet.AsyncContext;
-import javax.servlet.ServletException;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
 import java.net.URI;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -56,7 +39,7 @@ public class DemoApplication {
          * as its entity.. but the CompletionStage has no ability to affect the wrapping EntityResponse's StatusCode, or for that matter,
          * no ability to create a "Location" header as well.
          * <p>
-         * {@link FutureServerResponse} is a bad way of forcing functional MVC to deal with future dynamic responses.
+         * {@link WriteWhenCompleteResponse} is a bad way of forcing functional MVC to deal with future dynamic responses.
          * <p>
          * is there a real way?
          */
@@ -69,7 +52,7 @@ public class DemoApplication {
                                 if (FeatureManager.isActive()) {
                                     return ServerResponse.ok().body(String.format("New implementation of Hello World! your option is: %s", option));
                                 } else {
-                                    return FutureServerResponse.from(oldHelloWorldService.futureFoo(Integer.parseInt(option)));
+                                    return WriteWhenCompleteResponse.adapt(oldHelloWorldService.futureFoo(Integer.parseInt(option)));
                                 }
                             }
                     )
@@ -108,89 +91,4 @@ public class DemoApplication {
             });
         }
     }
-
-    /**
-     * this solution works, but is not very optimal.. for instance it ignores the reasoning for making all the fields of
-     * {@link org.springframework.web.servlet.function.EntityResponse} implementation final! it also handles errors in a ... less than optimal ... way.
-     */
-    @RequiredArgsConstructor
-    static class FutureServerResponse<T> implements ServerResponse {
-
-        private final CompletableFuture<ResponseEntity<T>> cs;
-
-        @SneakyThrows
-        Optional<ResponseEntity<T>> csr() {
-            if (cs.isDone()) {
-                return Optional.ofNullable(cs.get());
-            }
-            return Optional.empty();
-        }
-
-        public static <T> FutureServerResponse<T> from(CompletableFuture<ResponseEntity<T>> cs) {
-            return new FutureServerResponse<>(cs);
-        }
-
-        @NonNull
-        @Override
-        public HttpStatus statusCode() {
-            return csr().map(ResponseEntity::getStatusCode).orElseThrow(() -> new RuntimeException("not ready"));
-        }
-
-        @Override
-        public int rawStatusCode() {
-            return statusCode().value();
-        }
-
-        @SneakyThrows
-        @NonNull
-        @Override
-        public HttpHeaders headers() {
-            return csr().map(ResponseEntity::getHeaders).orElseThrow(() -> new RuntimeException("not ready"));
-        }
-
-        @NonNull
-        @Override
-        public MultiValueMap<String, Cookie> cookies() {
-            return new LinkedMultiValueMap<>();
-        }
-
-        @Override
-        public ModelAndView writeTo(@NonNull HttpServletRequest request,
-                                    @NonNull HttpServletResponse response,
-                                    @NonNull Context context) throws ServletException, IOException {
-            AsyncContext asyncContext = request.startAsync(request, response);
-
-            cs.whenComplete((responseEntity, throwable) ->
-                    {
-                        try {
-                            if (responseEntity != null) {
-                                BodyBuilder bodyBuilder = ServerResponse.status(responseEntity.getStatusCode())
-                                        .headers(x -> x.addAll(responseEntity.getHeaders()));
-                                if (responseEntity.getBody() == null) {
-                                    bodyBuilder.build()
-                                            .writeTo(request, response, context);
-                                } else {
-                                    bodyBuilder.body(responseEntity.getBody())
-                                            .writeTo(request, response, context);
-                                }
-                            }
-                            if (throwable != null) {
-                                ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(throwable.getMessage())
-                                        .writeTo(request, response, context);
-                            }
-                        } catch (Throwable t) {
-                            try {
-                                ServerResponse.status(HttpStatus.INTERNAL_SERVER_ERROR).body(t.getMessage())
-                                        .writeTo(request, response, context);
-                            } catch (Throwable ignored) {
-                            }
-                        } finally {
-                            asyncContext.complete();
-                        }
-                    }
-            );
-            return null;
-        }
-    }
-
 }
